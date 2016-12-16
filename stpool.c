@@ -1,8 +1,8 @@
 /*
  *  COPYRIGHT (C) 2014 - 2020, piggy_xrh
- * 
- *	  Stpool is a portable and efficient tasks pool library, it can work on diferent 
- * platforms such as Windows, linux, unix and ARM.  
+ *
+ *	  Stpool is a portable and efficient tasks pool library, it can work on diferent
+ * platforms such as Windows, linux, unix and ARM.
  *
  *    If you have any troubles or questions on using the library, contact me.
  *
@@ -28,22 +28,22 @@ smcache_t *___smc = NULL;
 /************************************************************************************/
 /*****************************Interfaces about the task *****************************/
 /************************************************************************************/
-static void 
+static void
 __stpool_task_size_init()
 {
 	const char *fac_desc;
 	const cpool_factory_t *fac;
-	
+
 	/**
 	 * We visit all of the factories to get the max size of task object
 	 */
 	for (fac=first_factory(&fac_desc); fac; fac=next_factory(&fac_desc)) {
 		if (!(fac->efuncs & eFUNC_F_TASK_EX))
 			continue;
-		
+
 		___objlen = max(___objlen, fac->method->me.task_size);
 	}
-	
+
 	if (!___objlen)
 		___objlen = sizeof(ctask_t);
 }
@@ -52,10 +52,10 @@ EXPORT size_t
 stpool_task_size()
 {
 	static OSPX_pthread_once_t ___octl = OSPX_PTHREAD_ONCE_INIT;
-	
+
 	if (!___objlen)
 		OSPX_pthread_once(&___octl, __stpool_task_size_init);
-	
+
 	return ___objlen;
 }
 
@@ -63,8 +63,8 @@ EXPORT int
 stpool_task_init(struct sttask *ptask, stpool_t *pool,
 				const char *name, void (*run)(struct sttask *ptask),
 				void (*err_handler)(struct sttask *ptask, long reasons),
-				void *arg) 
-{	
+				void *arg)
+{
 	__stpool_task_INIT(TASK_CAST_DOWN(ptask), name, run, err_handler, arg);
 
 	return stpool_task_set_p(ptask, pool);
@@ -83,11 +83,11 @@ EXPORT struct sttask *
 stpool_task_new(stpool_t *pool, const char *name,
 				void (*run)(struct sttask *ptask),
 				void (*err_handler)(struct sttask *ptask, long reasons),
-				void *arg) 
+				void *arg)
 {
 	int e;
-	ctask_t *ptask; 
-	
+	ctask_t *ptask;
+
 	/**
 	 * Does the pool support the Waitable tasks ?
 	 */
@@ -100,7 +100,7 @@ stpool_task_new(stpool_t *pool, const char *name,
 
 	if (!(ptask = __stpool_cache_get(NULL)))
 		return NULL;
-	
+
 	__stpool_task_INIT(ptask, name, run, err_handler, arg);
 	if (pool && (e = __stpool_task_set_p(ptask, pool))) {
 		MSG_log2(M_POOL, LOG_ERR,
@@ -113,7 +113,7 @@ stpool_task_new(stpool_t *pool, const char *name,
 }
 
 EXPORT struct sttask *
-stpool_task_clone(struct sttask *ptask, int clone_schattr) 
+stpool_task_clone(struct sttask *ptask, int clone_schattr)
 {
 	struct sttask *nptask;
 
@@ -122,7 +122,7 @@ stpool_task_clone(struct sttask *ptask, int clone_schattr)
 	if (nptask) {
 		if (clone_schattr) {
 			struct schattr attr;
-			
+
 			stpool_task_getschattr(ptask, &attr);
 			stpool_task_setschattr(nptask, &attr);
 		}
@@ -132,30 +132,30 @@ stpool_task_clone(struct sttask *ptask, int clone_schattr)
 	return nptask;
 }
 
-EXPORT void 
-stpool_task_delete(struct sttask *ptask) 
-{	
+EXPORT void
+stpool_task_delete(struct sttask *ptask)
+{
 	ctask_t *ptask0 = TASK_CAST_DOWN(ptask);
 
 	assert (ptask && ___smc);
 	assert (!(eTASK_VM_F_CACHE & ptask0->f_vmflags));
-	
+
 	if (ptask0->f_stat || ptask0->ref) {
 		assert (ptask0->pool);
-		
-		if (ptask0->f_stat || 
+
+		if (ptask0->f_stat ||
 			(!Invokable(task_wsync, ptask0->pool) || Invoke(task_wsync, ptask0->pool, ptask0))) {
 			MSG_log(M_POOL, LOG_ERR,
 				"It is not safe to destroy the task now. task(%s/%p) ref(%hhd) code(%d) stat:%p\n",
-				ptask0->task_desc, ptask0, ptask0->ref, ptask0->task_code, 
+				ptask0->task_desc, ptask0, ptask0->ref, ptask0->task_code,
 				ptask0->pool ? Invoke(task_stat, ptask0->pool, ptask0, NULL) : ptask0->f_stat);
 		}
 		assert (!ptask0->ref);
 	}
 
-	if (ptask0->pool) 
+	if (ptask0->pool)
 		TRY_Invoke(task_deinit, ptask0->pool, ptask0);
-	
+
 	__stpool_cache_put(NULL, ptask0);
 }
 
@@ -164,35 +164,35 @@ stpool_task_set_p(struct sttask *ptask, stpool_t *pool)
 {
 	int e = 0;
 	ctask_t *ptask0 = TASK_CAST_DOWN(ptask);
-	
+
 	if (ptask0->pool != pool) {
 		if (ptask0->ref || ptask0->f_stat) {
 			cpool_t *pool = ptask0->pool;
-				
+
 			assert (pool);
 			if (ptask0->f_stat) {
 				MSG_log(M_POOL, LOG_WARN,
 						"@%s:Task(%s/%p) is in progress. ref(%hhd) stat(%p)\n",
-						__FUNCTION__, ptask0->task_desc, ptask0, ptask0->ref, 
+						__FUNCTION__, ptask0->task_desc, ptask0, ptask0->ref,
 						pool ? Invoke(task_stat, pool, ptask0, NULL) : (long)NULL);
-				
+
 				return POOL_TASK_ERR_BUSY;
-			} 
-					
+			}
+
 			if (!Invokable(task_wsync, pool) || (e = Invoke(task_wsync, pool, ptask0))) {
 				MSG_log(M_POOL, LOG_WARN,
 					"It is not safe to change the task's pool since its reference "
 					"is not zero. task(%s/%p) ref(%hhd) stat(%p)\n",
-					ptask->task_name, ptask, ptask0->ref, 
+					ptask->task_name, ptask, ptask0->ref,
 					Invoke(task_stat, pool, ptask0, NULL));
 
 				return __stpool_liberror(e);
 			}
 			assert (!ptask0->ref && !ptask0->f_stat);
 		}
-		
+
 		/**
-		 * We try to deinitialize it if the task has been initialized before 
+		 * We try to deinitialize it if the task has been initialized before
 		 */
 		if (ptask0->pool && Invokable(task_deinit, ptask0->pool)) {
 			Invoke(task_deinit, ptask0->pool, ptask0);
@@ -207,7 +207,7 @@ stpool_task_set_p(struct sttask *ptask, stpool_t *pool)
 
 EXPORT stpool_t *
 stpool_task_p(struct sttask *ptask)
-{	
+{
 	return TASK_CAST_DOWN(ptask)->pool;
 }
 
@@ -215,24 +215,24 @@ EXPORT const char *
 stpool_task_pname(struct sttask *ptask)
 {
 	stpool_t *p = TASK_CAST_DOWN(ptask)->pool;
-	
+
 	return p ? p->desc : NULL;
 }
 
 EXPORT void
-stpool_task_set_userflags(struct sttask *ptask, unsigned short uflags) 
-{	
+stpool_task_set_userflags(struct sttask *ptask, unsigned short uflags)
+{
 	TASK_CAST_DOWN(ptask)->user_flags = uflags;
 }
 
 EXPORT unsigned short
-stpool_task_get_userflags(struct sttask *ptask) 
+stpool_task_get_userflags(struct sttask *ptask)
 {
 	return TASK_CAST_DOWN(ptask)->user_flags;
 }
 
-EXPORT void 
-stpool_task_setschattr(struct sttask *ptask, struct schattr *attr) 
+EXPORT void
+stpool_task_setschattr(struct sttask *ptask, struct schattr *attr)
 {
 	/**
 	 * Correct the priority parameters
@@ -241,45 +241,45 @@ stpool_task_setschattr(struct sttask *ptask, struct schattr *attr)
 		attr->sche_pri = 0;
 	if (attr->sche_pri > 99)
 		attr->sche_pri = 99;
-	
+
 	/**
 	 * If the task's scheduling attribute is not permanent,
-	 * It'll be reset at the next scheduling time 
+	 * It'll be reset at the next scheduling time
 	 */
-	if (!attr->permanent) 
-		TASK_CAST_DOWN(ptask)->f_vmflags |= eTASK_VM_F_PRI_ONCE;	
+	if (!attr->permanent)
+		TASK_CAST_DOWN(ptask)->f_vmflags |= eTASK_VM_F_PRI_ONCE;
 	else
 		TASK_CAST_DOWN(ptask)->f_vmflags &= ~eTASK_VM_F_PRI_ONCE;
-	
+
 	/**
 	 * If the task has a zero priority, We just push the task
-	 * into the lowest priority queue 
+	 * into the lowest priority queue
 	 */
 	if (!attr->sche_pri_policy || (!attr->sche_pri && ep_SCHE_BACK == attr->sche_pri_policy)) {
 		TASK_CAST_DOWN(ptask)->f_vmflags &= ~(eTASK_VM_F_PRI|eTASK_VM_F_ADJPRI);
 		TASK_CAST_DOWN(ptask)->f_vmflags |= eTASK_VM_F_PUSH;
 		TASK_CAST_DOWN(ptask)->pri = 0;
 		TASK_CAST_DOWN(ptask)->priq = 0;
-	
+
 	} else {
 		/**
-		 * We set the task with eTASK_VM_F_ADJPRI, The pool will 
+		 * We set the task with eTASK_VM_F_ADJPRI, The pool will
 		 * choose a propriate priority queue to queue the task
-		 * when the user calls @stpool_task_queue 
+		 * when the user calls @stpool_task_queue
 		 */
 		TASK_CAST_DOWN(ptask)->f_vmflags |= (eTASK_VM_F_PRI|eTASK_VM_F_ADJPRI);
 		TASK_CAST_DOWN(ptask)->f_vmflags &= ~eTASK_VM_F_PUSH;
-		TASK_CAST_DOWN(ptask)->pri = attr->sche_pri;	
+		TASK_CAST_DOWN(ptask)->pri = attr->sche_pri;
 	}
-	TASK_CAST_DOWN(ptask)->pri_policy = attr->sche_pri_policy;	
+	TASK_CAST_DOWN(ptask)->pri_policy = attr->sche_pri_policy;
 }
 
-EXPORT void 
-stpool_task_getschattr(struct sttask *ptask, struct schattr *attr) 
-{	
+EXPORT void
+stpool_task_getschattr(struct sttask *ptask, struct schattr *attr)
+{
 	attr->sche_pri = TASK_CAST_DOWN(ptask)->pri;
 	attr->sche_pri_policy = TASK_CAST_DOWN(ptask)->pri_policy;
-	
+
 	if (TASK_CAST_DOWN(ptask)->f_vmflags & eTASK_VM_F_PRI_ONCE)
 		attr->permanent = 0;
 	else
@@ -287,16 +287,16 @@ stpool_task_getschattr(struct sttask *ptask, struct schattr *attr)
 }
 
 EXPORT int
-stpool_task_queue(struct sttask *ptask) 
+stpool_task_queue(struct sttask *ptask)
 {
 	int e;
 	stpool_t *pool = TASK_CAST_DOWN(ptask)->pool;
-	
+
 	if (!pool)
 		return POOL_TASK_ERR_DESTINATION;
-	
+
 	Invoke_err(e, task_queue, pool, TASK_CAST_DOWN(ptask));
-	
+
 	return e;
 }
 
@@ -307,13 +307,13 @@ stpool_task_remove(struct sttask *ptask, int dispatched_by_pool)
 
 	if (!pool || !TASK_CAST_DOWN(ptask)->f_stat)
 		return 0;
-	
+
 	if (Invokable(task_remove, pool))
 		return Invoke(task_remove, pool, TASK_CAST_DOWN(ptask), dispatched_by_pool);
 
-	TRY_Invoke(task_mark, pool, TASK_CAST_DOWN(ptask), dispatched_by_pool ? 
+	TRY_Invoke(task_mark, pool, TASK_CAST_DOWN(ptask), dispatched_by_pool ?
 					TASK_VMARK_REMOVE_BYPOOL : TASK_VMARK_REMOVE);
-	
+
 	return TASK_CAST_DOWN(ptask)->f_stat ? 0 : 1;
 }
 
@@ -322,7 +322,7 @@ stpool_task_remove(struct sttask *ptask, int dispatched_by_pool)
  * task's working routine or in the task's completion routine.
  */
 EXPORT void
-stpool_task_detach(struct sttask *ptask) 
+stpool_task_detach(struct sttask *ptask)
 {
 	cpool_t *pool = TASK_CAST_DOWN(ptask)->pool;
 
@@ -330,15 +330,15 @@ stpool_task_detach(struct sttask *ptask)
 }
 
 EXPORT void
-stpool_task_mark(struct sttask *ptask, long lflags) 
-{	
+stpool_task_mark(struct sttask *ptask, long lflags)
+{
 	cpool_t *pool = TASK_CAST_DOWN(ptask)->pool;
 
-	if (pool) 
+	if (pool)
 		TRY_Invoke(task_mark, pool, TASK_CAST_DOWN(ptask), lflags);
 }
 
-EXPORT int  
+EXPORT int
 stpool_task_pthrottle_wait(struct sttask *ptask, long ms)
 {
 	stpool_t *pool = TASK_CAST_DOWN(ptask)->pool;
@@ -361,30 +361,30 @@ stpool_task_wait(struct sttask *ptask, long ms)
 
 	if (!pool || !TASK_CAST_DOWN(ptask)->f_stat)
 		return 0;
-	
+
 	TRY_Invoke_err(e, task_wait, pool, TASK_CAST_DOWN(ptask), ms);
-	
+
 	return e;
 }
 
-EXPORT int  
-stpool_task_wait_all(struct sttask *entry[], int n, long ms) 
+EXPORT int
+stpool_task_wait_all(struct sttask *entry[], int n, long ms)
 {
 	int idx, e = 0;
 	uint64_t sclock = (ms > 0) ? us_startr() : 0;
-	
+
 	do {
 		/**
 		 * Scan the whole entry to find a task who is not
-		 * free now, and then we wait for it in @ms 
+		 * free now, and then we wait for it in @ms
 		 */
-		for (idx=0; idx<n; idx++) 
+		for (idx=0; idx<n; idx++)
 			if (entry[idx] && !stpool_task_is_free(entry[idx]))
 				break;
-		
+
 		/**
 		 * If there are none busy tasks existing in the entry,
-		 * we return 0 imediately 
+		 * we return 0 imediately
 		 */
 		if (idx == n)
 			return 0;
@@ -392,9 +392,9 @@ stpool_task_wait_all(struct sttask *entry[], int n, long ms)
 		e = stpool_task_wait(entry[idx], ms);
 
 		/**
-		 * Caculate the left waiting time if it is necessary 
+		 * Caculate the left waiting time if it is necessary
 		 */
-		if (ms > 0 && 
+		if (ms > 0 &&
 			0  > (ms -= us_endr(sclock) / 1000))
 			ms = 0;
 	} while (!e);
@@ -402,27 +402,27 @@ stpool_task_wait_all(struct sttask *entry[], int n, long ms)
 	return e;
 }
 
-EXPORT int  
-stpool_task_wait_any(struct sttask *entry[], int n, long ms) 
+EXPORT int
+stpool_task_wait_any(struct sttask *entry[], int n, long ms)
 {
 	int idx, e = 0;
 	stpool_t *pool = NULL;
-	
+
 	/**
-	 * Scan the whole entry to find a task who is free now. 
+	 * Scan the whole entry to find a task who is free now.
 	 */
 	for (idx=0; idx<n; idx++) {
 		if (!entry[idx])
 			continue;
 
 		/**
-		 * If there are any tasks who is free now, we return 0 imediately 
+		 * If there are any tasks who is free now, we return 0 imediately
 		 */
 		if (stpool_task_is_free(entry[idx]) || !TASK_CAST_DOWN(entry[idx])->pool)
 			return 0;
-		
+
 		/**
-		 * Get the destination pool 
+		 * Get the destination pool
 		 */
 		if (!pool)
 			pool = TASK_CAST_DOWN(entry[idx])->pool;
@@ -430,24 +430,24 @@ stpool_task_wait_any(struct sttask *entry[], int n, long ms)
 		else if (TASK_CAST_DOWN(entry[idx])->pool != pool)
 			return POOL_TASK_ERR_DESTINATION;
 	}
-	
+
 	if (!pool)
 		TRY_Invoke_err(e, wait_any2, pool, (ctask_t **)entry, n, ms);
-	
+
 	return e;
 }
 
 EXPORT long
-stpool_task_stat(struct sttask *ptask) 
+stpool_task_stat(struct sttask *ptask)
 {
 	ctask_t *ptask0 = TASK_CAST_DOWN(ptask);
 	cpool_t *pool = ptask0->pool;
-	
+
 	/**
-	 * The task must have been intialized 
+	 * The task must have been intialized
 	 */
 	assert (ptask0->task_run);
-	
+
 	if (!pool || !ptask0->f_stat)
 		return 0;
 
@@ -455,34 +455,34 @@ stpool_task_stat(struct sttask *ptask)
 }
 
 EXPORT long
-stpool_task_vm(struct sttask *ptask) 
+stpool_task_vm(struct sttask *ptask)
 {
 	return TASK_CAST_DOWN(ptask)->f_vmflags & (eTASK_VM_F_REMOVE_FLAGS|eTASK_VM_F_DISABLE_QUEUE|eTASK_VM_F_ENABLE_QUEUE);
 }
 
 EXPORT long
-stpool_task_stat2(struct sttask *ptask, long *vm) 
+stpool_task_stat2(struct sttask *ptask, long *vm)
 {
 	long stat;
 	ctask_t *ptask0 = TASK_CAST_DOWN(ptask);
 	cpool_t *pool = ptask0->pool;
-	
+
 	/**
-	 * The task must have been intialized 
+	 * The task must have been intialized
 	 */
 	assert (ptask0->task_run);
-	
+
 	if (!pool) {
-		if (vm) 
+		if (vm)
 			*vm = 0;
-		
+
 		return 0;
 	}
-		
+
 	stat = Invoke(task_stat, pool, ptask0, vm);
 	if (vm)
 		*vm &= (eTASK_VM_F_REMOVE_FLAGS|eTASK_VM_F_DISABLE_QUEUE|eTASK_VM_F_ENABLE_QUEUE);
-	
+
 	return stat;
 }
 
@@ -497,15 +497,15 @@ stpool_task_is_free(struct sttask *ptask)
 /*****************************Interfaces about the pool *****************************/
 /************************************************************************************/
 static void
-__lib_regist_atexit(void *opaque) 
+__lib_regist_atexit(void *opaque)
 {
 	cpool_t *pool = opaque;
-	
+
 	pool->free(pool);
 }
 
 EXPORT const char *
-stpool_version() 
+stpool_version()
 {
 	return "2015/10/12-3.2.2-libstpool-eCAPs";
 }
@@ -544,8 +544,8 @@ stpool_strerror(int error)
 	return "unkown";
 }
 
-EXPORT stpool_t * 
-stpool_create(const char *desc, long eCAPs, int maxthreads, int minthreads, int suspend, int pri_q_num) 
+EXPORT stpool_t *
+stpool_create(const char *desc, long eCAPs, int maxthreads, int minthreads, int suspend, int pri_q_num)
 {
 	cpool_t *pool = NULL;
 	long elibCAPs;
@@ -553,7 +553,7 @@ stpool_create(const char *desc, long eCAPs, int maxthreads, int minthreads, int 
 	const char *fac_desc;
 	const cpool_factory_t *fac;
 	char eCAPs_buffer[400];
-	
+
 	struct fac_candidate {
 		const char *fac_desc;
 		int nfuncs;
@@ -562,9 +562,9 @@ stpool_create(const char *desc, long eCAPs, int maxthreads, int minthreads, int 
 	} fac_sel[20];
 	int idx, sel_idx = 0;
 
-	
+
 	/**
-	 * It does not need to load the ospx library since 
+	 * It does not need to load the ospx library since
      * we do not call any APIs who must use the TLS datas.
 	 */
 	MSG_log(M_POOL, LOG_INFO,
@@ -572,7 +572,7 @@ stpool_create(const char *desc, long eCAPs, int maxthreads, int minthreads, int 
 			desc, __eCAPs_desc(eCAPs, eCAPs_buffer));
 
 	/**
-	 * Select the best templates to create the pool 
+	 * Select the best templates to create the pool
 	 */
 	for (fac=first_factory(&fac_desc); fac; fac=next_factory(&fac_desc)) {
 		elibCAPs = __enum_CAPs(fac, &nfuncs);
@@ -580,13 +580,13 @@ stpool_create(const char *desc, long eCAPs, int maxthreads, int minthreads, int 
 			MSG_log(M_POOL, LOG_DEBUG,
 					"Find a Factory(\"%s\" scores(%d), nfuns(%d)): %s\n\n",
 					fac_desc, fac->scores, nfuncs, __eCAPs_desc(elibCAPs, eCAPs_buffer));
-			
+
 			/**
 			 * We skip it if the entry is full
 			 */
 			if (sel_idx == sizeof(fac_sel)/sizeof(*fac_sel))
 				continue;
-			
+
 			/**
 			 * Add the factory into our candidate entries
 			 */
@@ -604,14 +604,14 @@ stpool_create(const char *desc, long eCAPs, int maxthreads, int minthreads, int 
 			++ sel_idx;
 		}
 	}
-	
+
 	if (!sel_idx) {
 		MSG_log(M_POOL, LOG_ERR,
 				"Can not find any pool template to satify user. eCAPs(%p) (%s)\n",
 				eCAPs, stpool_version());
 		return NULL;
 	}
-	
+
 	for (idx=0; idx<sel_idx; idx++) {
 		MSG_log(M_POOL, LOG_INFO,
 				"Factory(\"%s\" scores(%d) nfuns(%d)) try to service us. lib_eCAPs(%p) user_eCAPs(%p)\n",
@@ -627,7 +627,7 @@ stpool_create(const char *desc, long eCAPs, int maxthreads, int minthreads, int 
 			fac_sel[idx].fac_desc, fac_sel[idx].fac);
 	}
 
-	if (idx != sel_idx) 
+	if (idx != sel_idx)
 		Invoke(atexit, pool, __lib_regist_atexit, pool);
 
 	return pool;
@@ -654,52 +654,52 @@ stpool_factory_list2(char *buffer, int bufferlen, long lflags)
 	const cpool_factory_t *fac;
 
 	static char _stackbuffer[1024 * 8];
-	
+
 	if (!buffer) {
 		buffer = _stackbuffer;
 		bufferlen = sizeof(_stackbuffer);
 	}
 	ptr = buffer;
 	bzero(ptr, bufferlen);
-	
+
 
 	for (fac=first_factory(&fac_desc); fac; fac=next_factory(&fac_desc)) {
 		char *_ptr = stackb;
 		int  _len  = sizeof(stackb);
-		
+
 		if (n)
 			snprintf_ejump(ejump_return, _ptr, _len, "\n");
 
 		if (LIST_F_NAME & lflags) {
-			if (bfirst) 
+			if (bfirst)
 				snprintf_ejump(ejump_return, ptr, bufferlen, "factory\t\t");
-			
+
 			snprintf_ejump(ejump_skip, _ptr, _len, "%s\t", fac_desc);
 		}
-		
+
 		if ((LIST_F_CAPS_READABLE|LIST_F_CAPS) & lflags) {
 			if (bfirst)
 				snprintf_ejump(ejump_return, ptr, bufferlen, "capbilities\t");
 
-			if (LIST_F_CAPS_READABLE & lflags) 
+			if (LIST_F_CAPS_READABLE & lflags)
 				snprintf_ejump(ejump_skip, _ptr, _len, "%s\t", __eCAPs_desc(__enum_CAPs(fac, 0), eCAPs_buffer));
-			
-			else if (LIST_F_CAPS & lflags) 
+
+			else if (LIST_F_CAPS & lflags)
 				snprintf_ejump(ejump_skip, _ptr, _len, "0x%08lx\t", __enum_CAPs(fac, 0));
 		}
 
-		if (LIST_F_SCORES & lflags) {	
-			if (bfirst) 
+		if (LIST_F_SCORES & lflags) {
+			if (bfirst)
 				snprintf_ejump(ejump_return, ptr, bufferlen, "scores\t");
 
 			snprintf_ejump(ejump_skip, _ptr, _len, "%d", fac->scores);
 		}
-	
+
 		if (bfirst && (LIST_F_ALL & lflags)) {
 			bfirst = 0;
 			snprintf_ejump(ejump_return, ptr, bufferlen, "\n\n");
 		}
-		
+
 		if (_len != sizeof (stackb)) {
 			++ n;
 			snprintf_ejump(ejump_return, ptr, bufferlen, "%s", stackb);
@@ -713,26 +713,26 @@ ejump_return:
 }
 
 
-EXPORT stpool_t * 
+EXPORT stpool_t *
 stpool_create_byfac(const char *fac, const char *desc, int maxthreads, int minthreads, int suspend, int pri_q_num)
 {
 	const char *fac_desc;
 	const cpool_factory_t *factory = NULL;
 	cpool_t *pool;
-	
+
 	if (!fac) {
 		MSG_log(M_POOL, LOG_ERR,
 			"fac can not be NULL\n");
-		
+
 		return NULL;
 	}
 
 	MSG_log(M_POOL, LOG_INFO,
 			"creating the pool(\"%s\") facory(%s) ...\n",
 			desc, fac);
-	
+
 	/**
-	 * Select the templates to create the pool 
+	 * Select the templates to create the pool
 	 */
 	for (factory=first_factory(&fac_desc); factory; factory=next_factory(&fac_desc)) {
 		if (!strcmp(fac, fac_desc)) {
@@ -747,8 +747,8 @@ stpool_create_byfac(const char *fac, const char *desc, int maxthreads, int minth
 
 		return NULL;
 	}
-	
-	if ((pool = factory->create(desc, maxthreads, minthreads, pri_q_num, suspend))) 
+
+	if ((pool = factory->create(desc, maxthreads, minthreads, pri_q_num, suspend)))
 		Invoke(atexit, pool, __lib_regist_atexit, pool);
 	else
 		MSG_log2(M_POOL, LOG_ERR,
@@ -758,7 +758,7 @@ stpool_create_byfac(const char *fac, const char *desc, int maxthreads, int minth
 	return pool;
 }
 
-EXPORT long 
+EXPORT long
 stpool_caps(stpool_t *pool)
 {
 	return __enum_CAPs2(pool->efuncs, pool->me, NULL);
@@ -770,8 +770,8 @@ stpool_desc(stpool_t *pool)
 	return pool->desc;
 }
 
-EXPORT void  
-stpool_thread_setscheattr(stpool_t *pool, struct stpool_thattr *attr) 
+EXPORT void
+stpool_thread_setscheattr(stpool_t *pool, struct stpool_thattr *attr)
 {
 	struct thread_attr attr0 = {0};
 
@@ -780,13 +780,13 @@ stpool_thread_setscheattr(stpool_t *pool, struct stpool_thattr *attr)
 	 */
 	assert (sizeof(attr0) == sizeof(*attr));
 	memcpy(attr, &attr0, sizeof(*attr));
-				
+
 	TRY_Invoke(setattr, pool, &attr0);
 }
 
 EXPORT struct stpool_thattr *
-stpool_thread_getscheattr(stpool_t *pool, struct stpool_thattr *attr) 
-{	
+stpool_thread_getscheattr(stpool_t *pool, struct stpool_thattr *attr)
+{
 	struct thread_attr attr0 = {0};
 
 	TRY_Invoke(getattr, pool, &attr0);
@@ -800,53 +800,53 @@ stpool_thread_getscheattr(stpool_t *pool, struct stpool_thattr *attr)
 	return attr;
 }
 
-EXPORT long 
-stpool_addref(stpool_t *pool) 
-{	
+EXPORT long
+stpool_addref(stpool_t *pool)
+{
 	assert (Invokable(addref, pool));
-	
+
 	return Invoke(addref, pool);
 }
 
-EXPORT long 
-stpool_release(stpool_t *pool) 
+EXPORT long
+stpool_release(stpool_t *pool)
 {
 	long ref;
-	
+
 	assert (Invokable(release, pool));
 
-	if (!(ref = Invoke(release, pool)) && ___smc) 
+	if (!(ref = Invoke(release, pool)) && ___smc)
 		smcache_flush(___smc, 1);
 
 	return ref;
 }
 
-EXPORT void 
-stpool_set_activetimeo(stpool_t *pool, long acttimeo, long randtimeo) 
+EXPORT void
+stpool_set_activetimeo(stpool_t *pool, long acttimeo, long randtimeo)
 {
 	TRY_Invoke(set_activetimeo, pool, acttimeo, randtimeo);
 }
 
-EXPORT void 
-stpool_adjust_abs(stpool_t *pool, int maxthreads, int minthreads) 
+EXPORT void
+stpool_adjust_abs(stpool_t *pool, int maxthreads, int minthreads)
 {
 	TRY_Invoke(adjust_abs, pool, maxthreads, minthreads);
 }
 
-EXPORT void 
-stpool_adjust(stpool_t *pool, int maxthreads, int minthreads) 
+EXPORT void
+stpool_adjust(stpool_t *pool, int maxthreads, int minthreads)
 {
 	TRY_Invoke(adjust, pool, maxthreads, minthreads);
 }
 
 EXPORT int
-stpool_flush(stpool_t *pool) 
+stpool_flush(stpool_t *pool)
 {
 	TRY_Invoke_return_res(0, flush, pool);
 }
 
 EXPORT struct pool_stat *
-stpool_stat(stpool_t *pool, struct pool_stat *stat) 
+stpool_stat(stpool_t *pool, struct pool_stat *stat)
 {
 	static struct pool_stat __stat;
 	struct cpool_stat stat0 = {0};
@@ -855,7 +855,7 @@ stpool_stat(stpool_t *pool, struct pool_stat *stat)
 	Invoke(stat, pool, &stat0);
 	if (!stat)
 		stat = &__stat;
-	
+
 	/**
 	 * Convert the inner status into the library status
 	 */
@@ -871,37 +871,37 @@ stpool_stat_print(stpool_t *pool)
 	struct pool_stat stat;
 
 	stpool_stat(pool, &stat);
-	
+
 	return stpool_stat_print2(&stat, NULL, 0);
 }
 
 EXPORT const char *
-stpool_stat_print2(struct pool_stat *stat, char *buffer, size_t bufferlen) 
+stpool_stat_print2(struct pool_stat *stat, char *buffer, size_t bufferlen)
 {
 	static char __buffer[1024] = {0};
-	
-	struct tm *p_tm;	
+
+	struct tm *p_tm;
 	char buffer0[200] = {0}, buffer1[50];
 	char *pos = buffer0;
-	
+
 	if (!buffer) {
 		buffer = __buffer;
 		bufferlen = sizeof(__buffer);
 	}
 
 #define __libSTR(v, buff) (((v) == (unsigned int)-1) ? "*" : (sprintf(buff, "%d", v), buff))
-	pos += sprintf(pos, "   tasks_peak  : %s\n", __libSTR(stat->tasks_peak, buffer1)); 
+	pos += sprintf(pos, "   tasks_peak  : %s\n", __libSTR(stat->tasks_peak, buffer1));
 	pos += sprintf(pos, "   tasks_added : %s\n", __libSTR(stat->tasks_added, buffer1));
 	pos += sprintf(pos, "tasks_processed: %s\n", __libSTR(stat->tasks_processed, buffer1));
 	pos += sprintf(pos, " tasks_removed : %s\n", __libSTR(stat->tasks_removed, buffer1));
-	
+
 	p_tm = localtime(&stat->created);
 	buffer[bufferlen -1] = '\0';
-	
+
 	/**
 	 * Format the pool status to make it readable for us
 	 */
-	snprintf(buffer, bufferlen - 1, 
+	snprintf(buffer, bufferlen - 1,
 			"    desc  : \"%s\"\n"
 			"   created: %04d-%02d-%02d %02d:%02d:%02d\n"
 			"  user_ref: %ld\n"
@@ -919,7 +919,7 @@ stpool_stat_print2(struct pool_stat *stat, char *buffer, size_t bufferlen)
 			"curtasks_scheduling: %d\n"
 			"curtasks_removing: %d\n"
 			"%s\n",
-			stat->desc, 
+			stat->desc,
 			p_tm->tm_year + 1900, p_tm->tm_mon + 1, p_tm->tm_mday,
 			p_tm->tm_hour, p_tm->tm_min, p_tm->tm_sec,
 			stat->ref,
@@ -939,7 +939,7 @@ stpool_stat_print2(struct pool_stat *stat, char *buffer, size_t bufferlen)
 			stat->curtasks_removing,
 			buffer0
 		);
-			
+
 	return buffer;
 }
 
@@ -949,32 +949,32 @@ stpool_scheduler_map_dump2(stpool_t *pool, char *buffer, int len)
 	TRY_Invoke_return_res(NULL, scheduler_map_dump, pool, buffer, len);
 }
 
-EXPORT int  
-stpool_add_routine(stpool_t *pool, 
+EXPORT int
+stpool_add_routine(stpool_t *pool,
 				const char *name, void (*task_run)(struct sttask *ptask),
 				void (*task_err_handler)(struct sttask *ptask, long reasons),
 				void *task_arg, struct schattr *attr)
-{	
+{
 	int e;
 	ctask_t *ptask;
-	
+
 	/**
-	 * We try to get a task object from the cache, 
-	 * (@__stpool_cache_put should be called later to recycle it) 
+	 * We try to get a task object from the cache,
+	 * (@__stpool_cache_put should be called later to recycle it)
 	 */
 	ptask = __stpool_cache_get(pool);
 	if (!ptask)
 		return POOL_ERR_NOMEM;
-	
+
 	__stpool_task_INIT(ptask, name, task_run, task_err_handler, task_arg);
 	if (attr)
 		stpool_task_setschattr(TASK_CAST_UP(ptask), attr);
-	
+
 	/**
-	 * Pay the task object back to cache if we fail 
-	 * to add it into the pool's pending queue 
+	 * Pay the task object back to cache if we fail
+	 * to add it into the pool's pending queue
 	 */
-	if ((e = __stpool_task_set_p(ptask, pool)) || 
+	if ((e = __stpool_task_set_p(ptask, pool)) ||
 		(e = stpool_task_queue(TASK_CAST_UP(ptask)))) {
 		__stpool_cache_put(pool, ptask);
 		e = __stpool_liberror(e);
@@ -984,35 +984,35 @@ stpool_add_routine(stpool_t *pool,
 }
 
 EXPORT long
-stpool_mark_all(stpool_t *pool, long lflags) 
+stpool_mark_all(stpool_t *pool, long lflags)
 {
 	MSG_log(M_POOL, LOG_INFO,
 			"{\"%s\"/%p} Marking all tasks with %p ...\n",
 			pool->desc, pool, lflags);
-	
+
 	if (!Invokable(mark_all, pool)) {
-		if (Invokable(remove_all, pool) && TASK_VMARK_REMOVE & lflags) 
+		if (Invokable(remove_all, pool) && TASK_VMARK_REMOVE & lflags)
 			return Invoke(remove_all, pool, lflags & TASK_VMARK_REMOVE_BYPOOL);
-		
+
 		return 0;
 	}
-	
+
 	return Invoke(mark_all, pool, lflags);
 }
 
-EXPORT int  
+EXPORT int
 stpool_mark_cb(stpool_t *pool, Walk_cb wcb, void *wcb_arg)
 {
 	TRY_Invoke_return_res(0, mark_cb, pool, (Visit_cb)wcb, wcb_arg);
 }
-	
+
 EXPORT int
-stpool_throttle_enable(stpool_t *pool, int enable) 
+stpool_throttle_enable(stpool_t *pool, int enable)
 {
 	MSG_log(M_POOL, LOG_INFO,
 			"{\"%s\"/%p} %s the throttle ...\n",
 			pool->desc, pool, enable ? "ENABLING" : "DISABLING");
-	
+
 	if (!Invokable(throttle_enable, pool))
 		return POOL_ERR_NSUPPORT;
 
@@ -1020,32 +1020,32 @@ stpool_throttle_enable(stpool_t *pool, int enable)
 	return 0;
 }
 
-EXPORT int  
-stpool_throttle_wait(stpool_t *pool, long ms) 
+EXPORT int
+stpool_throttle_wait(stpool_t *pool, long ms)
 {
 	int e;
 
 	TRY_Invoke_err(e, throttle_wait, pool, ms);
-	
+
 	return e;
 }
 
 EXPORT int
-stpool_suspend(stpool_t *pool, long ms) 
+stpool_suspend(stpool_t *pool, long ms)
 {
 	int e;
 
 	MSG_log(M_POOL, LOG_INFO,
 			"{\"%s\"/%p} suspend ... (%ld ms)\n",
 			pool->desc, pool, ms);
-	
+
 	TRY_Invoke_err(e, suspend, pool, ms);
-	
+
 	return e;
 }
 
-EXPORT void 
-stpool_resume(stpool_t *pool) 
+EXPORT void
+stpool_resume(stpool_t *pool)
 {
 	MSG_log(M_POOL, LOG_INFO,
 			"{\"%s\"/%p} resume ... \n",
@@ -1054,59 +1054,56 @@ stpool_resume(stpool_t *pool)
 	TRY_Invoke(resume, pool);
 }
 
-EXPORT int  
-stpool_remove_all(stpool_t *pool, int dispatched_by_pool) 
+EXPORT int
+stpool_remove_all(stpool_t *pool, int dispatched_by_pool)
 {
 	MSG_log(M_POOL, LOG_INFO,
 			"{\"%s\"/%p} remove all tasks ... (%d)\n",
 			pool->desc, pool, dispatched_by_pool);
-	
+
 	TRY_Invoke_return_res(0, remove_all, pool, dispatched_by_pool);
 }
 
-EXPORT long 
-stpool_wakeid() 
+EXPORT long
+stpool_wakeid()
 {
 	return WWAKE_id();
 }
 
-EXPORT int  
+EXPORT int
 stpool_wait_all(stpool_t * pool, long ms)
 {
 	int e;
-	
+
 	MSG_log(M_POOL, LOG_INFO,
 			"{\"%s\"/%p} start waiting for all tasks's being done ... (%ld ms)\n",
 			pool->desc, pool, ms);
-	
+
 	TRY_Invoke_err(e, wait_all, pool, ms);
-	
+
 	return e;
 }
 
-EXPORT int  
-stpool_wait_cb(stpool_t *pool, Walk_cb wcb, void *wcb_arg, long ms)
+EXPORT int stpool_wait_cb(stpool_t *pool, Walk_cb wcb, void *wcb_arg, long ms)
 {
 	int e;
-	
+
 	TRY_Invoke_err(e, wait_cb, pool, (Visit_cb)wcb, wcb_arg, ms);
-	
+
 	return e;
 }
 
-EXPORT int  
-stpool_wait_any(stpool_t *pool, long ms)
+EXPORT int stpool_wait_any(stpool_t *pool, long ms)
 {
 	int e;
 
 	TRY_Invoke_err(e, wait_any, pool, ms);
-	
+
 	return e;
 }
 
 
-EXPORT void 
-stpool_wakeup(long wakeup_id) 
+EXPORT void stpool_wakeup(long wakeup_id)
 {
 	WWAKE_invoke(wakeup_id);
 }
