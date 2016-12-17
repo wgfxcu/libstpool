@@ -1070,8 +1070,7 @@ stpool_wakeid()
 	return WWAKE_id();
 }
 
-EXPORT int
-stpool_wait_all(stpool_t * pool, long ms)
+EXPORT int stpool_wait_all(stpool_t * pool, long ms)
 {
 	int e;
 
